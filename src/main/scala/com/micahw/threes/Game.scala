@@ -1,6 +1,7 @@
 package com.micahw.threes
 
 import scala.util.Random
+import scala.collection.immutable.HashSet
 
 sealed abstract class Tile
 case object Blank extends Tile
@@ -77,18 +78,6 @@ class Board(val board : List[List[Tile]], val upcoming : Seq[Tile]) {
     }.mkString("\n") + Console.RESET
   }
 
-  /*
-+-----+-----+-----+-----+
-|  5  | 374 |     |     |
-+-----+-----+-----+-----+
-|     |     |     |     |
-+-----+-----+-----+-----+
-|     |     |     |     |
-+-----+-----+-----+-----+
-|     |     |     |     |
-+-----+-----+-----+-----+
-   */
-
   def output = {
     val max = (5 :: board.flatten.map(Tile.toString(_).size)).max
     val cellWidth = max + 2
@@ -126,7 +115,7 @@ class Board(val board : List[List[Tile]], val upcoming : Seq[Tile]) {
   }
 
   override def equals(o: Any) = o match {
-    case that: Board => that.toString == toString
+    case that: Board => that.toString.equals(toString)
     case _ => false
   }
 
@@ -154,32 +143,35 @@ class Board(val board : List[List[Tile]], val upcoming : Seq[Tile]) {
   //   5. Rotate the board back to its correct position.
   def slide(dir : Direction) = {
     val lr = rotateN(board, dir.rotations)
+    var changed = HashSet() : Set[Int]
     
-    val processed = lr.map{row => {
+    val processed = lr.zipWithIndex.map{case (row, i) => {
       // There's probably a nice functional way of doing this, but I
       // can't figure it out right now
       val a = row.toArray
-      for (i <- Range(0, row.size - 1)) {
-        Tile.combine(a(i), a(i+1)).map{c => {
-          a(i) = c
-          a(i+1) = Blank
+      for (j <- Range(0, row.size - 1)) {
+        Tile.combine(a(j), a(j + 1)).map{c => {
+          a(j) = c
+          a(j+1) = Blank
+          changed = changed + j
         }}
       }
 
       a.toList
     }}
 
-    new Board(rotateN(processed, -dir.rotations), upcoming)
+    (new Board(rotateN(processed, -dir.rotations), upcoming), changed)
   }
 
-  def addPiece(dir : Direction) = {
+  def addPiece(dir : Direction, allowedCells : Set[Int]) = {
     val newPiece = upcoming.head
     // rotate the board so that all swipes are equivalent to a down slide
     val lr = rotateN(board, dir.rotations - 1)
     val choices = lr.head.zipWithIndex.filter({case (c, i) => c == Blank})
+      .map(_._2).toSet.intersect(allowedCells).toList
 
     val row = lr.head.toArray
-    row(choices(Random.nextInt(choices.size))._2) = newPiece
+    row(choices(Random.nextInt(choices.size))) = newPiece
     val newBoard = row.toList :: lr.tail
 
     // return the rest of the list, or create a new one if we've run out
@@ -193,10 +185,18 @@ class Board(val board : List[List[Tile]], val upcoming : Seq[Tile]) {
     new Board(rotateN(newBoard, - (dir.rotations - 1)), newUpcoming)
   }
 
+  def isAllowed(dir : Direction) = {
+    !slide(dir)._1.equals(this)
+  }
+
+  def allowedDirs = {
+    List(Down, Up, Right, Left).filter(isAllowed)
+  }
+
   def gameStep(dir : Direction) = {
-    val newBoard = slide(dir)
-    if (!newBoard.equals(this)) {
-      Some(newBoard.addPiece(dir))
+    if (isAllowed(dir)) {
+      val (newBoard, changed) = slide(dir)
+      Some(newBoard.addPiece(dir, changed))
     }
     else {
       None
@@ -206,7 +206,7 @@ class Board(val board : List[List[Tile]], val upcoming : Seq[Tile]) {
   def isDone = {
     List(Up, Down, Left, Right)
       .map(slide(_))
-      .map(_.toString)
+      .map(_.toString())
       .forall(_ == toString)
   }
 
@@ -252,6 +252,12 @@ object Game {
       println()
       println(b.output)
       println()
+
+      if (b.isDone) {
+        println("Game over! Final score: " + b.score)
+        System.exit(0)
+      }
+
       val dirString = readLine("> ")
       val dir = dirString match {
         case "u" => Some(Up)
@@ -266,11 +272,6 @@ object Game {
         println("You can't move that way...")
         b
       }))
-
-      if (b.isDone) {
-        println("Game over! Final score: " + b.score)
-        System.exit(0)
-      }
     }
   }
 }
