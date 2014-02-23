@@ -217,17 +217,10 @@ class Board(val board : List[List[Tile]], val upcoming : Seq[Tile]) {
 
 object Board {
   def newInitial = {
-    val numOnes = new Random().nextInt(3) + 2
-    val numTwos = 6 - numOnes
-    val pieces =
-      List.make(7, Blank) ++
-      List.make(numOnes, OneTile) ++
-      List.make(numTwos, TwoTile) ++
-      List.make(3, ThreeTile(0))
+    val (pieces, upcoming) = createUpcoming.splitAt(9)
+    val board = Random.shuffle(pieces ++ List.make(7, Blank)).grouped(4).toList
 
-    val upcoming = createUpcoming
-
-    new Board(Random.shuffle(pieces).grouped(4).toList, upcoming)
+    new Board(board, upcoming)
   }
 
   def createUpcoming = {
