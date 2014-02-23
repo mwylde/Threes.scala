@@ -10,11 +10,16 @@ case object TwoTile extends Tile
 case class ThreeTile(power : Int) extends Tile
 
 object Tile {
+  def value(t : Tile) = t match {
+    case Blank => 0
+    case OneTile => 1
+    case TwoTile => 2
+    case ThreeTile(power) => 3 * (1 << power)
+  }
+
   def toString(t : Tile) = t match {
     case Blank => " "
-    case OneTile => "1"
-    case TwoTile => "2"
-    case ThreeTile(power) => (3 * (1 << power)).toString
+    case t => Tile.value(t).toString
   }
 
   def toColorString(t : Tile) = (t match {
@@ -63,7 +68,9 @@ case object Down extends Direction(1)
 case object Right extends Direction(2)
 case object Up extends Direction(3)
 
-class Board(val board : List[List[Tile]], val upcoming : Seq[Tile]) {
+class Board(val board : List[List[Tile]],
+            val next : Tile,
+            val upcoming : Seq[Tile]) {
   // these are the upcoming tiles, from which we will pick randomly
 
   override def toString = {
@@ -160,29 +167,45 @@ class Board(val board : List[List[Tile]], val upcoming : Seq[Tile]) {
       a.toList
     }}
 
-    (new Board(rotateN(processed, -dir.rotations), upcoming), changed)
+    (new Board(rotateN(processed, -dir.rotations), next, upcoming), changed)
   }
 
   def addPiece(dir : Direction, allowedCells : Set[Int]) = {
-    val newPiece = upcoming.head
     // rotate the board so that all swipes are equivalent to a down slide
     val lr = rotateN(board, dir.rotations - 1)
     val choices = lr.head.zipWithIndex.filter({case (c, i) => c == Blank})
       .map(_._2).toSet.intersect(allowedCells).toList
 
     val row = lr.head.toArray
-    row(choices(Random.nextInt(choices.size))) = newPiece
+    row(choices(Random.nextInt(choices.size))) = next
     val newBoard = row.toList :: lr.tail
 
     // return the rest of the list, or create a new one if we've run out
-    val newUpcoming = if (upcoming.tail.size > 0) {
-      upcoming.tail
-    }
-    else {
-      Board.createUpcoming
-    }
 
-    new Board(rotateN(newBoard, - (dir.rotations - 1)), newUpcoming)
+    // if there's a 48 or higher on the board, 1/21 times choose a bonus card
+    // randomly chosen from the card values in (6, m/8) inclusive, where m is
+    // the value of the largest card on the board.
+    val largestPow = board.flatten.map({
+      case ThreeTile(pow) => pow
+      case _ => 0
+    }).max
+
+    val (newNext, newStack) =
+      if (largestPow >= 4 && Random.nextDouble() <= 1 / 21.0) {
+        val r = Range(1, largestPow - 2)
+        (ThreeTile(r(Random.nextInt(r.size))), upcoming)
+      }
+      else {
+        (upcoming.head,
+          if (upcoming.tail.size > 0) {
+            upcoming.tail
+          }
+          else {
+            Board.createUpcoming
+          })
+      }
+
+    new Board(rotateN(newBoard, - (dir.rotations - 1)), newNext, newStack)
   }
 
   def isAllowed(dir : Direction) = {
@@ -220,7 +243,7 @@ object Board {
     val (pieces, upcoming) = createUpcoming.splitAt(9)
     val board = Random.shuffle(pieces ++ List.make(7, Blank)).grouped(4).toList
 
-    new Board(board, upcoming)
+    new Board(board, upcoming.head, upcoming.tail)
   }
 
   def createUpcoming = {
@@ -241,7 +264,7 @@ object Game {
   def main(args : Array[String]) = {
     var b = Board.newInitial
     while (true) {
-      println("Next: " + Tile.toColorString(b.upcoming.head) + Console.RESET)
+      println("Next: " + Tile.toColorString(b.next) + Console.RESET)
       println()
       println(b.output)
       println()
