@@ -14,3 +14,4 @@ project/plugins/project/
 
 # IDEA
 .idea/
+.ensime

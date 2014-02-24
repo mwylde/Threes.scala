@@ -22,11 +22,8 @@ object Tile {
     case t => Tile.value(t).toString
   }
 
-  def toColorString(t : Tile) = (t match {
-    case OneTile => Console.BLUE
-    case TwoTile => Console.RED
-    case _ => Console.RESET
-  }) + toString(t)
+  def toColorString(t : Tile) =
+    backgroundColor(t) + foregroundColor(t) + toString(t) + Console.RESET
 
   def backgroundColor(t : Tile) = t match {
     case Blank => Console.BLACK_B
@@ -68,11 +65,23 @@ case object Down extends Direction(1)
 case object Right extends Direction(2)
 case object Up extends Direction(3)
 
+object BoardUtils { 
+  def mod(a : Int, b : Int) = (a % b + b) % b
+  def rotate[T](b : List[List[T]]) = b.transpose.map(_.reverse)
+  def rotateN[T](b : List[List[T]], n : Int) = {
+    Range(0, mod(n, 4)).foldLeft(b)((b, _) => rotate(b))
+  }
+
+  val dirs = List(Left, Down, Right, Up)
+}
+  
 class Board(val board : List[List[Tile]],
             val next : Tile,
             val upcoming : Seq[Tile]) {
   // these are the upcoming tiles, from which we will pick randomly
 
+  import BoardUtils._
+  
   override def toString = {
     board.map { row =>
       row.map(Tile.toString).mkString(" ")
@@ -126,12 +135,6 @@ class Board(val board : List[List[Tile]],
     case _ => false
   }
 
-  private def mod(a : Int, b : Int) = (a % b + b) % b
-  private def rotate[T](b : List[List[T]]) = b.transpose.map(_.reverse)
-  private def rotateN[T](b : List[List[T]], n : Int) = {
-    Range(0, mod(n, 4)).foldLeft(b)((b, _) => rotate(b))
-  }
-
   // Implementing this logic for any particular direction is
   // symmetrical to a single direction. Therefore, for simplicity,
   // we will rotate the board for the requested direction so that we
@@ -160,7 +163,7 @@ class Board(val board : List[List[Tile]],
         Tile.combine(a(j), a(j + 1)).map{c => {
           a(j) = c
           a(j+1) = Blank
-          changed = changed + j
+          changed = changed + i
         }}
       }
 
@@ -174,7 +177,7 @@ class Board(val board : List[List[Tile]],
     // rotate the board so that all swipes are equivalent to a down slide
     val lr = rotateN(board, dir.rotations - 1)
     val choices = lr.head.zipWithIndex.filter({case (c, i) => c == Blank})
-      .map(_._2).toSet.intersect(allowedCells).toList
+    .map(_._2).toSet.intersect(allowedCells).toList
 
     val row = lr.head.toArray
     row(choices(Random.nextInt(choices.size))) = next
@@ -227,10 +230,7 @@ class Board(val board : List[List[Tile]],
   }
 
   def isDone = {
-    List(Up, Down, Left, Right)
-      .map(slide(_))
-      .map(_.toString())
-      .forall(_ == toString)
+    allowedDirs.size == 0
   }
 
   def score = {
@@ -256,15 +256,92 @@ object Board {
   }
 }
 
-class Game {
-
-}
-
 object Game {
-  def main(args : Array[String]) = {
+  def main(args: Array[String]) {
+    if (args.size < 1) {
+      println("Usage: threes [command] {options}")
+      exit(1)
+    }
+    
+    val argList = args.toList
+    val command = argList.head
+
+    command match {
+      case "human" => human(argList.tail)
+      case "ai" => ai(argList.tail)
+      case "animate-ai" => animateAI(argList.tail)
+      case _ => println("Invalid command (expecting one of " +
+                        "[human ai]")
+    }
+  }
+
+  def ai(args: List[String]) {
+    import com.micahw.threes.ai._
+    // if (args.size < 1) {
+    //   println("you must specify an AI class")
+    //   exit(1)
+    // }
+    
+    // val klass = args(0)
+
+    def playGame(ai : AI) = {
+      var b = Board.newInitial
+      while (!b.isDone) {
+        val move = ai.next(b)
+        b = b.gameStep(move).getOrElse({
+          throw new Exception("Invalid move")
+        })
+      }
+      b
+    }
+
+    val n = 50
+
+    val scores = Range(0, n).map(i => {
+      val s = playGame(new AI1()).score
+      println(s)
+      s
+    }).sorted
+    println("Mean: " + scores.sum / n.asInstanceOf[Double])
+    println("Min: " + scores(0))
+    println("25%: " + scores(n / 4))
+    println("50%: " + scores(n / 2))
+    println("75%: " + scores(3 * n / 4))
+    println("Max: " + scores(n-1))
+  }
+
+  def animateAI(args: List[String]) = {
+    import com.micahw.threes.ai._
+
     var b = Board.newInitial
+    val ai = new AI1()
     while (true) {
-      println("Next: " + Tile.toColorString(b.next) + Console.RESET)
+      println("\033[KNext: " +
+              Tile.backgroundColor(b.next) + "  " +
+              Console.RESET)
+      println(b.output)
+
+      if (b.isDone) {
+        println("Final score: " + b.score)
+        System.exit(0)
+      }
+  
+      println("\033[20A")    
+      b = b.gameStep(ai.next(b)).get
+      Thread.sleep(500)
+    }
+  }
+  
+  def human(args : List[String]) = {
+    val debugMode = args.size > 0 && args(0) == "debug"
+    
+    var b = Board.newInitial
+    var msg = ""
+    while (true) {
+      println("\033[K" + msg)
+      println("\033[KNext: " +
+              Tile.backgroundColor(b.next) + "  " +
+              Console.RESET)
       println()
       println(b.output)
       println()
@@ -274,7 +351,7 @@ object Game {
         System.exit(0)
       }
 
-      val dirString = readLine("> ")
+      val dirString = readLine("\033[K> ")
       val dir = dirString match {
         case "u" => Some(Up)
         case "d" => Some(Down)
@@ -284,10 +361,15 @@ object Game {
         case _ => None
       }
 
-      dir.foreach(d => b = b.gameStep(d).getOrElse({
-        println("You can't move that way...")
+      msg = ""
+      dir.map(d => b = b.gameStep(d).getOrElse({
+        msg = "You can't move that way..."
         b
-      }))
+      })).getOrElse(msg = "Invalid command [r, l, u, d, q]")
+
+      if (!debugMode) {
+        println("\033[24A")
+      }
     }
   }
 }
