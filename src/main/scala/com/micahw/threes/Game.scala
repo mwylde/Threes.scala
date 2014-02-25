@@ -289,19 +289,21 @@ object Game {
       while (!b.isDone) {
         val move = ai.next(b)
         b = b.gameStep(move).getOrElse({
+          println(b.output)
+          println("Tried to move " + move)
           throw new Exception("Invalid move")
         })
       }
       b
     }
 
-    val n = 50
+    val n = 100
 
-    val scores = Range(0, n).map(i => {
+    val scores = Range(0, n).par.map(i => {
       val s = playGame(new AI1()).score
-      println(s)
+      // println(s)
       s
-    }).sorted
+    }).toList.sorted
     println("Mean: " + scores.sum / n.asInstanceOf[Double])
     println("Min: " + scores(0))
     println("25%: " + scores(n / 4))
