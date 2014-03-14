@@ -19,3 +19,5 @@ $ sbt "run human"      # play human game
 $ sbt "run ai"         # evaluate an AI's performance
 $ sbt "run animate-ai" # watch a sample run of an AI
 ```
+
+![Threes.scala screenshot](https://raw.github.com/mwylde/Threes.scala/master/screenshot.png)
